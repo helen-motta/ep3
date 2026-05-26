@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 int memoria_fisica[NUM_QUADROS];
 int memoria_virtual[NUM_PAGINAS];
@@ -131,10 +132,9 @@ int pagina_dona_do_quadro(int quadro) {
 
 // algoritmo de 2a chance
 void enfileirar_chance(int pagina) {
-    if (pagina < 0 || pagina >= NUM_PAGINAS) return;
-    if (memoria_virtual[pagina] == VALOR_AUSENTE) return;
-    if (esta_na_fila[pagina]) return;
-    if (tamanho_fila >= NUM_PAGINAS) return;
+    if (pagina < 0 || pagina >= NUM_PAGINAS || memoria_virtual[pagina] == VALOR_AUSENTE 
+        || esta_na_fila[pagina] || tamanho_fila >= NUM_PAGINAS) 
+        return;
 
     fila_chance[fim_fila] = pagina;
     fim_fila = (fim_fila + 1) % NUM_PAGINAS;
@@ -182,7 +182,6 @@ int escolher_vitima_nru() {
     return melhor_quadro;
 }
 
-// FIFO
 int escolher_vitima_segunda_chance() {
     int tentativas = 0;
     preencher_fila_se_vazia();
@@ -196,12 +195,12 @@ int escolher_vitima_segunda_chance() {
             continue;
         }
 
-        // Se o bit de acesso for 0, encontramos a vítima
+        // se o bit de acesso for 0, é a vítima
         if (bit_r[p] == 0) {
             return memoria_virtual[p];
         }
 
-        // Se for 1, damos uma "segunda chance" (zera o bit e joga pro fim da fila)
+        // Se for 1, ganha uma "segunda chance" (zera o bit e joga pro fim da fila)
         bit_r[p] = 0;
         enfileirar_chance(p);
         tentativas++;
@@ -212,7 +211,7 @@ int escolher_vitima_segunda_chance() {
 // LRU
 int escolher_vitima_lru() {
     int melhor_quadro = 0;
-    unsigned long long melhor_valor = 18446744073709551615ULL;
+    unsigned long long melhor_valor = ULLONG_MAX;
 
     for (int q = 0; q < NUM_QUADROS; q++) {
         int p = pagina_dona_do_quadro(q);
@@ -232,20 +231,15 @@ int escolher_vitima_lru() {
     return melhor_quadro;
 }
 
-// Centralizador da escolha da vítima
+// escolha da vítima
 int escolher_vitima() {
     if (algoritmo == NRU) return escolher_vitima_nru();
     if (algoritmo == SEGUNDA_CHANCE) return escolher_vitima_segunda_chance();
     return escolher_vitima_lru();
 }
 
-int executar_acesso(int pid, Operacao operacao, int endereco) {
-    // Validações básicas de segurança
-    if (pid != 0 && pid != 64 && pid != 128 && pid != 192) return -1;
-    if (endereco < 0 || endereco >= TAM_ESPACO_PROCESSO) return -1;
-    if (operacao != OP_LEITURA && operacao != OP_ESCRITA) return -1;
-
-    // Descobre qual página virtual está sendo acessada
+int executar_acesso(int pid, char operacao, int endereco) {
+    // página virtual que está sendo acessada
     int pagina = (pid / 64) * PAGINAS_POR_PROCESSO + (endereco / TAM_PAGINA);
     int hit = (memoria_virtual[pagina] != VALOR_AUSENTE);
 
@@ -258,7 +252,7 @@ int executar_acesso(int pid, Operacao operacao, int endereco) {
         int quadro_vitima = escolher_vitima();
         int pagina_vitima = pagina_dona_do_quadro(quadro_vitima);
 
-        // Despeja a página antiga se houver uma ali
+        // Se a página vítima estiver mapeada, precisa ser desalocada
         if (pagina_vitima != -1) {
             memoria_virtual[pagina_vitima] = VALOR_AUSENTE;
             bit_r[pagina_vitima] = 0;
@@ -266,14 +260,14 @@ int executar_acesso(int pid, Operacao operacao, int endereco) {
             esta_na_fila[pagina_vitima] = 0;
         }
 
-        // Mapeia a nova página no quadro físico livre
+        // Mapeia a nova página
         memoria_virtual[pagina] = quadro_vitima;
         memoria_fisica[quadro_vitima] = pid;
     }
 
     // Atualiza os bits de histórico
     bit_r[pagina] = 1;
-    if (operacao == OP_ESCRITA) bit_m[pagina] = 1;
+    if (operacao == 'E') bit_m[pagina] = 1;
 
     // Atualiza estruturas internas dos algoritmos
     if (algoritmo == SEGUNDA_CHANCE) enfileirar_chance(pagina);
@@ -286,7 +280,7 @@ int executar_acesso(int pid, Operacao operacao, int endereco) {
     }
 
     // reseta o bit R à cada 100 acessos
-    if (acessos > 0 && acessos % 100 == 0) {
+    if (acessos % 100 == 0) {
         for (int i = 0; i < NUM_PAGINAS; i++) bit_r[i] = 0;
     }
 
@@ -299,7 +293,6 @@ int main(int argc, char **argv) {
     if (argc != 4) return 1;
 
     algoritmo = atoi(argv[3]);
-    if (algoritmo < NRU || algoritmo > LRU) return 1;
 
     strcpy(arquivo_fisica_caminho, argv[1]);
     strcpy(arquivo_virtual_caminho, argv[2]);
@@ -310,7 +303,6 @@ int main(int argc, char **argv) {
     // Loop de cmds do terminal
     while (1) {
         printf("> ");
-        fflush(stdout);
 
         if (fgets(linha, sizeof(linha), stdin) == NULL) break;
 
@@ -333,11 +325,10 @@ int main(int argc, char **argv) {
             break;
             
         } else {
-            // processa um acesso de memória digitado
             int pid, endereco;
             char op;
             if (sscanf(linha, " %d %c %d", &pid, &op, &endereco) == 3) {
-                int resultado = executar_acesso(pid, (Operacao)op, endereco);
+                int resultado = executar_acesso(pid, op, endereco);
                 if (resultado == 1) printf("hit\n");
                 else if (resultado == 0) printf("fault\n");
             }
