@@ -1,0 +1,17 @@
+compilar:
+make
+
+executar:
+./ep3 <arquivo_memoria_fisica.pgm> <arquivo_memoria_virtual.pgm> <n>
+
+n:
+1 = NRU
+2 = Segunda chance
+3 = LRU segunda versao
+
+comandos:
+<PID> L <endereco>
+<PID> E <endereco>
+imprime virtual
+imprime fisica
+sair
